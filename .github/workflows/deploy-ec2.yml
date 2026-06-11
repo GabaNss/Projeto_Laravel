@@ -306,14 +306,23 @@ jobs:
             sudo a2enconf phpmyadmin-praticando16b
             sudo systemctl reload apache2
 
-            curl --fail --silent --show-error \
-              --retry 10 \
-              --retry-delay 3 \
-              http://127.0.0.1/ >/dev/null
+            smoke_test() {
+              URL="$1"
 
-            curl --fail --silent --show-error \
-              --retry 10 \
-              --retry-delay 3 \
-              http://127.0.0.1/phpmyadmin/ >/dev/null
+              if ! curl --fail --silent --show-error \
+                --retry 10 \
+                --retry-all-errors \
+                --retry-delay 3 \
+                "$URL" >/dev/null; then
+                echo "Smoke test failed: $URL"
+                sudo tail -n 80 storage/logs/laravel.log 2>/dev/null || true
+                sudo tail -n 80 /var/log/apache2/praticando16b-error.log 2>/dev/null || true
+                exit 1
+              fi
+            }
+
+            smoke_test http://127.0.0.1/
+            smoke_test http://127.0.0.1/login
+            smoke_test http://127.0.0.1/phpmyadmin/
 
             echo "Deployment completed successfully: $APP_URL"
