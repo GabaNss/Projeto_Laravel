@@ -1,0 +1,319 @@
+name: Deploy Laravel to EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  APP_NAME: ${{ vars.APP_NAME || 'HDC_Events' }}
+  APP_URL: ${{ secrets.APP_URL || vars.APP_URL || '' }}
+  DB_DATABASE: ${{ vars.DB_DATABASE || 'hdcevents' }}
+  DB_PASSWORD: senha_da_nasa
+  DB_USERNAME: laraveluser
+  DEPLOY_PATH: ${{ vars.EC2_DEPLOY_PATH || '/var/www/html/praticando16b' }}
+  EC2_HOST: ${{ secrets.EC2_HOST || vars.EC2_HOST }}
+  EC2_USER: ${{ secrets.EC2_USER || vars.EC2_USER || 'ubuntu' }}
+
+jobs:
+  test:
+    name: Test and build
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: hdcevents
+          MYSQL_PASSWORD: secret
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_USER: laraveluser
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ularaveluser -psecret"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: bcmath, curl, dom, fileinfo, gd, intl, mbstring, mysql, pdo_mysql, xml, zip
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install PHP dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Prepare test environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+          php artisan config:clear
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: mysql
+          DB_DATABASE: hdcevents
+          DB_HOST: 127.0.0.1
+          DB_PASSWORD: secret
+          DB_PORT: 3306
+          DB_USERNAME: laraveluser
+
+      - name: Run tests
+        run: php artisan test
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: mysql
+          DB_DATABASE: hdcevents
+          DB_HOST: 127.0.0.1
+          DB_PASSWORD: secret
+          DB_PORT: 3306
+          DB_USERNAME: laraveluser
+
+      - name: Build assets
+        run: npm run build
+
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 45
+
+    steps:
+      - name: Validate required secrets
+        env:
+          EC2_SSH_KEY_PRESENT: ${{ secrets.EC2_SSH_KEY != '' }}
+        run: |
+          test -n "$EC2_HOST" || (echo "Missing EC2_HOST secret or variable." && exit 1)
+          test "$EC2_SSH_KEY_PRESENT" = "true" || (echo "Missing EC2_SSH_KEY secret." && exit 1)
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Build deploy assets
+        run: |
+          npm ci
+          npm run build
+
+      - name: Prepare EC2 server
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
+          EC2_USER: ${{ env.EC2_USER }}
+        with:
+          host: ${{ env.EC2_HOST }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: DEPLOY_PATH,EC2_USER
+          script: |
+            set -euo pipefail
+
+            sudo apt-get update
+            echo "phpmyadmin phpmyadmin/dbconfig-install boolean false" | sudo debconf-set-selections
+            echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect none" | sudo debconf-set-selections
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+              apache2 mysql-server phpmyadmin composer unzip zip git curl rsync \
+              php php-cli php-common libapache2-mod-php \
+              php-bcmath php-curl php-gd php-intl php-mbstring php-mysql php-xml php-zip
+
+            sudo systemctl enable apache2
+            sudo systemctl start apache2
+            sudo systemctl enable mysql
+            sudo systemctl start mysql
+            sudo a2enmod rewrite
+
+            sudo mkdir -p \
+              "$DEPLOY_PATH" \
+              "$DEPLOY_PATH/bootstrap/cache" \
+              "$DEPLOY_PATH/public/img/events" \
+              "$DEPLOY_PATH/storage/framework/cache/data" \
+              "$DEPLOY_PATH/storage/framework/sessions" \
+              "$DEPLOY_PATH/storage/framework/views" \
+              "$DEPLOY_PATH/storage/logs"
+
+            sudo chown -R "$EC2_USER":www-data "$DEPLOY_PATH"
+            sudo chmod -R ug+rwx "$DEPLOY_PATH"
+
+      - name: Sync project files
+        uses: easingthemes/ssh-deploy@v5.1.0
+        env:
+          ARGS: "-rlgoDzvc --delete"
+          EXCLUDE: "/.git/, /.github/, /.env, /vendor/, /node_modules/, /tests/, /storage/logs/, /storage/framework/cache/, /storage/framework/sessions/, /storage/framework/views/, /public/img/events/"
+          REMOTE_HOST: ${{ env.EC2_HOST }}
+          REMOTE_USER: ${{ env.EC2_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          SOURCE: "./"
+          TARGET: "${{ env.DEPLOY_PATH }}/"
+
+      - name: Finish Laravel deployment
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          APP_NAME: ${{ env.APP_NAME }}
+          APP_URL: ${{ env.APP_URL }}
+          DB_DATABASE: ${{ env.DB_DATABASE }}
+          DB_PASSWORD: ${{ env.DB_PASSWORD }}
+          DB_USERNAME: ${{ env.DB_USERNAME }}
+          DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
+          EC2_HOST: ${{ env.EC2_HOST }}
+          EC2_USER: ${{ env.EC2_USER }}
+        with:
+          host: ${{ env.EC2_HOST }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: APP_NAME,APP_URL,DB_DATABASE,DB_PASSWORD,DB_USERNAME,DEPLOY_PATH,EC2_HOST,EC2_USER
+          script: |
+            set -euo pipefail
+
+            cd "$DEPLOY_PATH"
+
+            if [ ! -f .env ]; then
+              cp .env.example .env
+            fi
+
+            set_env() {
+              KEY="$1"
+              VALUE="$2"
+              ESCAPED_VALUE="$(printf '%s' "$VALUE" | sed -e 's/[\/&]/\\&/g')"
+
+              if grep -q "^${KEY}=" .env; then
+                sed -i "s/^${KEY}=.*/${KEY}=${ESCAPED_VALUE}/g" .env
+              else
+                printf '%s=%s\n' "$KEY" "$VALUE" >> .env
+              fi
+            }
+
+            if [ -z "${APP_URL:-}" ]; then
+              APP_URL="http://${EC2_HOST}"
+            fi
+
+            case "$DB_DATABASE" in
+              ''|*[!a-zA-Z0-9_]*)
+                echo "DB_DATABASE must contain only letters, numbers, and underscores."
+                exit 1
+                ;;
+            esac
+
+            case "$DB_USERNAME" in
+              ''|*[!a-zA-Z0-9_]*)
+                echo "DB_USERNAME must contain only letters, numbers, and underscores."
+                exit 1
+                ;;
+            esac
+
+            set_env APP_NAME "$APP_NAME"
+            set_env APP_ENV production
+            set_env APP_DEBUG false
+            set_env APP_URL "$APP_URL"
+            set_env DB_CONNECTION mysql
+            set_env DB_HOST 127.0.0.1
+            set_env DB_PORT 3306
+            set_env DB_DATABASE "$DB_DATABASE"
+            set_env DB_USERNAME "$DB_USERNAME"
+            set_env DB_PASSWORD "$DB_PASSWORD"
+            set_env SESSION_DRIVER database
+
+            DB_DATABASE_SQL="$(printf '%s' "$DB_DATABASE" | sed 's/`/``/g')"
+            DB_USERNAME_SQL="$(printf '%s' "$DB_USERNAME" | sed "s/'/''/g")"
+            DB_PASSWORD_SQL="$(printf '%s' "$DB_PASSWORD" | sed "s/'/''/g")"
+
+            sudo mysql <<SQL
+            CREATE DATABASE IF NOT EXISTS \`${DB_DATABASE_SQL}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+            CREATE USER IF NOT EXISTS '${DB_USERNAME_SQL}'@'localhost' IDENTIFIED BY '${DB_PASSWORD_SQL}';
+            ALTER USER '${DB_USERNAME_SQL}'@'localhost' IDENTIFIED BY '${DB_PASSWORD_SQL}';
+            GRANT ALL PRIVILEGES ON \`${DB_DATABASE_SQL}\`.* TO '${DB_USERNAME_SQL}'@'localhost';
+            FLUSH PRIVILEGES;
+            SQL
+
+            composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+
+            if ! grep -q '^APP_KEY=base64:' .env; then
+              php artisan key:generate --force
+            fi
+
+            php artisan optimize:clear
+            php artisan migrate --force
+            php artisan storage:link || true
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            sudo mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache public/img/events
+            sudo chown -R "$EC2_USER":www-data "$DEPLOY_PATH"
+            sudo chmod 640 .env
+            sudo chmod -R 775 storage bootstrap/cache public/img/events
+
+            SERVER_NAME="$(printf '%s' "$APP_URL" | sed -E 's#^https?://([^/:]+).*#\1#')"
+            if [ -z "$SERVER_NAME" ] || [ "$SERVER_NAME" = "$APP_URL" ]; then
+              SERVER_NAME="$EC2_HOST"
+            fi
+
+            sudo tee /etc/apache2/sites-available/praticando16b.conf >/dev/null <<APACHE
+            <VirtualHost *:80>
+                ServerName ${SERVER_NAME}
+                DocumentRoot ${DEPLOY_PATH}/public
+
+                <Directory ${DEPLOY_PATH}/public>
+                    AllowOverride All
+                    Require all granted
+                </Directory>
+
+                ErrorLog \${APACHE_LOG_DIR}/praticando16b-error.log
+                CustomLog \${APACHE_LOG_DIR}/praticando16b-access.log combined
+            </VirtualHost>
+            APACHE
+
+            sudo tee /etc/apache2/conf-available/phpmyadmin-praticando16b.conf >/dev/null <<APACHE
+            Alias /phpmyadmin /usr/share/phpmyadmin
+
+            <Directory /usr/share/phpmyadmin>
+                Options FollowSymLinks
+                DirectoryIndex index.php
+                AllowOverride None
+                Require all granted
+            </Directory>
+            APACHE
+
+            sudo a2dissite 000-default.conf || true
+            sudo a2ensite praticando16b.conf
+            sudo a2enconf phpmyadmin-praticando16b
+            sudo systemctl reload apache2
+
+            curl --fail --silent --show-error \
+              --retry 10 \
+              --retry-delay 3 \
+              http://127.0.0.1/ >/dev/null
+
+            curl --fail --silent --show-error \
+              --retry 10 \
+              --retry-delay 3 \
+              http://127.0.0.1/phpmyadmin/ >/dev/null
+
+            echo "Deployment completed successfully: $APP_URL"

@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="420" viewBox="0 0 1400 420">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#141922"/>
+      <stop offset="55%" stop-color="#202733"/>
+      <stop offset="100%" stop-color="#11151c"/>
+    </linearGradient>
+    <radialGradient id="beam1" cx="44%" cy="0%" r="68%">
+      <stop offset="0%" stop-color="#f2a340" stop-opacity="0.38"/>
+      <stop offset="58%" stop-color="#f2a340" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#f2a340" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="beam2" cx="78%" cy="10%" r="60%">
+      <stop offset="0%" stop-color="#56b6c2" stop-opacity="0.32"/>
+      <stop offset="65%" stop-color="#56b6c2" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#56b6c2" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="spot1" cx="16%" cy="22%" r="22%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="spot2" cx="82%" cy="66%" r="24%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1400" height="420" fill="url(#bg)"/>
+  <rect width="1400" height="420" fill="url(#beam1)"/>
+  <rect width="1400" height="420" fill="url(#beam2)"/>
+  <rect width="1400" height="420" fill="url(#spot1)"/>
+  <rect width="1400" height="420" fill="url(#spot2)"/>
+  <path d="M0 284 C115 250 218 303 340 274 C500 236 625 286 752 260 C904 228 1016 288 1165 260 C1265 242 1340 260 1400 245 L1400 420 L0 420 Z" fill="#0c1016" opacity="0.82"/>
+  <path d="M0 328 C130 296 260 334 398 306 C562 276 718 334 862 304 C1022 270 1172 326 1400 292 L1400 420 L0 420 Z" fill="#080b10" opacity="0.9"/>
+  <g opacity="0.58">
+    <circle cx="92" cy="340" r="12" fill="#1f2630"/>
+    <circle cx="132" cy="334" r="15" fill="#252d38"/>
+    <circle cx="188" cy="348" r="11" fill="#1f2630"/>
+    <circle cx="244" cy="333" r="16" fill="#252d38"/>
+    <circle cx="318" cy="350" r="12" fill="#1f2630"/>
+    <circle cx="396" cy="330" r="15" fill="#252d38"/>
+    <circle cx="484" cy="342" r="13" fill="#1f2630"/>
+    <circle cx="580" cy="334" r="15" fill="#252d38"/>
+    <circle cx="690" cy="347" r="12" fill="#1f2630"/>
+    <circle cx="790" cy="332" r="16" fill="#252d38"/>
+    <circle cx="892" cy="345" r="12" fill="#1f2630"/>
+    <circle cx="998" cy="331" r="15" fill="#252d38"/>
+    <circle cx="1108" cy="344" r="13" fill="#1f2630"/>
+    <circle cx="1218" cy="335" r="16" fill="#252d38"/>
+    <circle cx="1322" cy="348" r="12" fill="#1f2630"/>
+  </g>
+  <g stroke="#f2a340" stroke-width="4" stroke-linecap="round" opacity="0.36">
+    <path d="M520 88 L432 316"/>
+    <path d="M612 72 L620 316"/>
+    <path d="M704 88 L810 316"/>
+  </g>
+  <g stroke="#56b6c2" stroke-width="4" stroke-linecap="round" opacity="0.28">
+    <path d="M920 72 L816 318"/>
+    <path d="M1018 92 L1032 318"/>
+    <path d="M1112 76 L1215 318"/>
+  </g>
+</svg>
