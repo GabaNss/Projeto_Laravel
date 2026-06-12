@@ -326,3 +326,6 @@ jobs:
             smoke_test http://127.0.0.1/phpmyadmin/
 
             echo "Deployment completed successfully: $APP_URL"
+
+            
+#wad
